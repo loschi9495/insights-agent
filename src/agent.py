@@ -1,6 +1,7 @@
 import anthropic
 from pathlib import Path
 from src.bigquery_client import BigQueryClient
+from src.exporter import generate_xlsx
 from src.tools import TOOLS
 from config.settings import CLAUDE_MODEL, CLAUDE_MAX_TOKENS
 
@@ -33,6 +34,16 @@ class InsightsAgent:
                 return self.bq.list_tables(inputs["dataset_id"])
             case "describe_table":
                 return self.bq.describe_table(inputs["dataset_id"], inputs["table_id"])
+            case "export_spreadsheet":
+                try:
+                    rows = self.bq.execute_query_raw(
+                        sql=inputs["sql"],
+                        max_rows=inputs.get("max_rows", 5000),
+                    )
+                    file_id = generate_xlsx(rows, title=inputs.get("title", "Relatório"))
+                    return f"EXPORT_FILE_ID:{file_id}|ROWS:{len(rows)}|TITLE:{inputs.get('title', 'Relatório')}"
+                except Exception as e:
+                    return f"ERRO ao exportar: {e}"
             case _:
                 return f"Tool desconhecida: {name}"
 

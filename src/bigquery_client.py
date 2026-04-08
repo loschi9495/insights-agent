@@ -65,6 +65,24 @@ class BigQueryClient:
         self._schema_cache = result
         return result
 
+    def execute_query_raw(self, sql: str, max_rows: int = 5000) -> list[dict]:
+        """Executa query e retorna lista de dicts (para exportação)."""
+        sql_upper = sql.upper().strip()
+
+        for kw in BLOCKED_SQL_KEYWORDS:
+            if kw in sql_upper.split():
+                raise ValueError(f"Keyword '{kw}' não permitida.")
+
+        if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
+            raise ValueError("Query deve começar com SELECT ou WITH.")
+
+        job_config = bigquery.QueryJobConfig(
+            maximum_bytes_billed=BIGQUERY_MAX_BYTES_BILLED,
+        )
+        job = self.client.query(sql, job_config=job_config)
+        rows = list(job.result(max_results=max_rows))
+        return [dict(row) for row in rows]
+
     def execute_query(self, sql: str, max_rows: int | None = None) -> str:
         sql_upper = sql.upper().strip()
 

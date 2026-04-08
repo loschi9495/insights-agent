@@ -63,4 +63,32 @@ TOOLS = [
             "required": ["dataset_id", "table_id"],
         },
     },
+    {
+        "name": "export_spreadsheet",
+        "description": (
+            "Exporta o resultado de uma query SQL para uma planilha Excel (.xlsx) "
+            "que o usuário pode baixar. Use quando o usuário pedir para exportar, "
+            "salvar em planilha, gerar Excel, ou baixar os dados. "
+            "Retorna um link de download. Suporta até 5000 linhas."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "sql": {
+                    "type": "string",
+                    "description": "Query SQL para gerar os dados da planilha.",
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Título/nome da planilha (ex: 'GMV por empresa Q1 2026').",
+                },
+                "max_rows": {
+                    "type": "integer",
+                    "description": "Máximo de linhas (default 5000).",
+                    "default": 5000,
+                },
+            },
+            "required": ["sql", "title"],
+        },
+    },
 ]

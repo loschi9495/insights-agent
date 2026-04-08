@@ -31,5 +31,13 @@ Para relatórios, use esta estrutura:
 3. Tabela com breakdown (se aplicável)
 4. Insight ou recomendação (se relevante)
 
+## Exportação para Planilha
+Quando o usuário pedir para exportar, salvar em planilha, gerar Excel ou baixar os dados:
+1. Use a tool export_spreadsheet com a query SQL e um título descritivo.
+2. A tool retorna um resultado com EXPORT_FILE_ID. Extraia o file_id.
+3. Na sua resposta, inclua o link de download no formato: [Baixar planilha](/download/FILE_ID_AQUI)
+4. Também resuma os dados na resposta (total de linhas, principais colunas).
+5. Se o usuário perguntar algo E pedir planilha ao mesmo tempo, use AMBAS as tools: execute_query para a resposta textual e export_spreadsheet para o arquivo.
+
 ## Schema do BigQuery
 {schema}
