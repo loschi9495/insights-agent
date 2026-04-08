@@ -2,7 +2,11 @@ import warnings
 warnings.filterwarnings("ignore", message="Your application has authenticated using end user credentials")
 
 from google.cloud import bigquery
+from src.cache import QueryCache
 from config.settings import GCP_PROJECT_ID, BIGQUERY_LOCATION, BIGQUERY_MAX_BYTES_BILLED, MAX_QUERY_ROWS, BLOCKED_SQL_KEYWORDS
+
+# Cache compartilhado entre instâncias
+_query_cache = QueryCache(default_ttl=1800)  # 30 min
 
 
 class BigQueryClient:
@@ -12,6 +16,7 @@ class BigQueryClient:
             location=BIGQUERY_LOCATION,
         )
         self._schema_cache: dict | None = None
+        self.cache = _query_cache
 
     def list_datasets(self) -> str:
         datasets = list(self.client.list_datasets())
@@ -93,6 +98,11 @@ class BigQueryClient:
         if not (sql_upper.startswith("SELECT") or sql_upper.startswith("WITH")):
             return "ERRO: Query deve começar com SELECT ou WITH."
 
+        # Check cache
+        cached = self.cache.get(sql)
+        if cached:
+            return cached + "\n\n(resultado do cache)"
+
         job_config = bigquery.QueryJobConfig(
             maximum_bytes_billed=BIGQUERY_MAX_BYTES_BILLED,
         )
@@ -114,4 +124,9 @@ class BigQueryClient:
 
         bytes_processed = job.total_bytes_processed or 0
         footer = f"\n\n({len(rows)} rows, {bytes_processed / 1024 / 1024:.1f} MB processados)"
-        return "\n".join(lines) + footer
+        result = "\n".join(lines) + footer
+
+        # Store in cache
+        self.cache.set(sql, result)
+
+        return result

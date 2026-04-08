@@ -4,13 +4,15 @@ API HTTP para o Agente de Insights da Onfly.
 Uso:
     uvicorn api:app --reload --port 8080
 """
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel
 from src.agent import InsightsAgent
+from src.agent_stream import StreamingInsightsAgent
 from src.auth import get_current_user
 from src.exporter import get_export_path, cleanup_old_exports
+from src.templates import get_templates, render_template
 
 app = FastAPI(
     title="Onfly Insights Agent",
@@ -28,6 +30,7 @@ app.add_middleware(
 
 # Pool de agentes por session
 sessions: dict[str, InsightsAgent] = {}
+stream_sessions: dict[str, StreamingInsightsAgent] = {}
 
 
 class QuestionRequest(BaseModel):
@@ -53,6 +56,11 @@ class UserResponse(BaseModel):
     email: str
     name: str
     picture: str
+
+
+class TemplateRenderRequest(BaseModel):
+    template_id: str
+    variables: dict | None = None
 
 
 @app.post("/auth/google", response_model=UserResponse)
@@ -90,7 +98,6 @@ def extract_follow_ups(answer: str) -> tuple[str, list[str]]:
     follow_ups = []
     clean_answer = answer
 
-    # Procura seção de "Próximas perguntas" no final da resposta
     markers = ["**Próximas perguntas:**", "**Próximas perguntas**:", "**Perguntas sugeridas:**"]
     for marker in markers:
         if marker in answer:
@@ -119,8 +126,21 @@ def ask_question(req: QuestionRequest, user: dict = Depends(get_current_user)):
         raise HTTPException(status_code=500, detail=str(e))
 
     answer, follow_ups = extract_follow_ups(raw_answer)
-
     return QuestionResponse(answer=answer, session_id=req.session_id, follow_ups=follow_ups)
+
+
+@app.post("/ask/stream")
+def ask_question_stream(req: QuestionRequest, user: dict = Depends(get_current_user)):
+    """Envia uma pergunta e recebe resposta via Server-Sent Events (streaming)."""
+    if req.session_id not in stream_sessions:
+        stream_sessions[req.session_id] = StreamingInsightsAgent(user=user)
+
+    agent = stream_sessions[req.session_id]
+    return StreamingResponse(
+        agent.ask_stream(req.question),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @app.post("/reset")
@@ -128,6 +148,8 @@ def reset_session(session_id: str = "default", user: dict = Depends(get_current_
     """Reseta o histórico de conversa de uma sessão."""
     if session_id in sessions:
         sessions[session_id].reset()
+    if session_id in stream_sessions:
+        stream_sessions[session_id].reset()
     return {"status": "ok"}
 
 
@@ -146,6 +168,21 @@ def get_suggestions(user: dict = Depends(get_current_user)):
         "Empresas que usam travel mas não usam expense",
         "Quantos tickets de suporte foram abertos por categoria este mês?",
     ])
+
+
+@app.get("/templates")
+def list_templates(user: dict = Depends(get_current_user)):
+    """Retorna templates de relatórios disponíveis."""
+    return {"templates": get_templates()}
+
+
+@app.post("/templates/render")
+def render_template_endpoint(req: TemplateRenderRequest, user: dict = Depends(get_current_user)):
+    """Renderiza um template com variáveis e retorna o prompt pronto."""
+    prompt = render_template(req.template_id, req.variables)
+    if not prompt:
+        raise HTTPException(status_code=404, detail="Template não encontrado")
+    return {"prompt": prompt}
 
 
 @app.get("/download/{file_id}")
