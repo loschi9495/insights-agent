@@ -1,25 +1,38 @@
 import anthropic
+from datetime import date
 from pathlib import Path
 from src.bigquery_client import BigQueryClient
 from src.exporter import generate_xlsx
+from src.prompt_enricher import enrich_question, build_user_context
 from src.tools import TOOLS
 from config.settings import CLAUDE_MODEL, CLAUDE_MAX_TOKENS
 
 
 class InsightsAgent:
-    def __init__(self):
+    def __init__(self, user: dict | None = None):
         self.claude = anthropic.Anthropic()
         self.bq = BigQueryClient()
+        self.user = user
         self.system_prompt = self._load_system_prompt()
         self.conversation: list[dict] = []
 
     def _load_system_prompt(self) -> str:
         template = Path("prompts/system.txt").read_text()
+
         try:
             schema = self.bq.get_full_schema()
         except Exception:
-            schema = "(Schema será descoberto dinamicamente via tools list_datasets/list_tables/describe_table)"
-        return template.replace("{schema}", schema)
+            schema = "(Schema será descoberto dinamicamente via tools)"
+
+        user_context = build_user_context(self.user)
+        today = date.today().strftime("%d/%m/%Y")
+
+        return (
+            template
+            .replace("{schema}", schema)
+            .replace("{user_context}", user_context)
+            .replace("{today}", today)
+        )
 
     def _execute_tool(self, name: str, inputs: dict) -> str:
         match name:
@@ -48,9 +61,10 @@ class InsightsAgent:
                 return f"Tool desconhecida: {name}"
 
     def ask(self, question: str) -> str:
-        self.conversation.append({"role": "user", "content": question})
+        enriched = enrich_question(question)
+        self.conversation.append({"role": "user", "content": enriched})
 
-        max_iterations = 10  # evitar loops infinitos
+        max_iterations = 10
         for _ in range(max_iterations):
             response = self.claude.messages.create(
                 model=CLAUDE_MODEL,
@@ -61,7 +75,6 @@ class InsightsAgent:
             )
 
             if response.stop_reason == "tool_use":
-                # Executar todas as tool calls
                 tool_results = []
                 for block in response.content:
                     if block.type == "tool_use":
@@ -77,9 +90,10 @@ class InsightsAgent:
 
             elif response.stop_reason == "end_turn":
                 self.conversation.append({"role": "assistant", "content": response.content})
-                return "".join(
+                answer = "".join(
                     block.text for block in response.content if hasattr(block, "text")
                 )
+                return answer
 
         return "Limite de iterações atingido. Tente reformular a pergunta."
 

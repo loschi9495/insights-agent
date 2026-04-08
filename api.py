@@ -38,6 +38,7 @@ class QuestionRequest(BaseModel):
 class QuestionResponse(BaseModel):
     answer: str
     session_id: str
+    follow_ups: list[str] = []
 
 
 class SuggestionResponse(BaseModel):
@@ -84,19 +85,42 @@ def google_login(req: GoogleLoginRequest):
     )
 
 
+def extract_follow_ups(answer: str) -> tuple[str, list[str]]:
+    """Extrai sugestões de follow-up da resposta do agente."""
+    follow_ups = []
+    clean_answer = answer
+
+    # Procura seção de "Próximas perguntas" no final da resposta
+    markers = ["**Próximas perguntas:**", "**Próximas perguntas**:", "**Perguntas sugeridas:**"]
+    for marker in markers:
+        if marker in answer:
+            parts = answer.split(marker, 1)
+            clean_answer = parts[0].rstrip().rstrip("---").rstrip()
+            suggestions_text = parts[1].strip()
+            for line in suggestions_text.split("\n"):
+                line = line.strip().lstrip("- ").lstrip("* ").strip()
+                if line and not line.startswith("---"):
+                    follow_ups.append(line)
+            break
+
+    return clean_answer, follow_ups[:5]
+
+
 @app.post("/ask", response_model=QuestionResponse)
 def ask_question(req: QuestionRequest, user: dict = Depends(get_current_user)):
     """Envia uma pergunta em linguagem natural e recebe a resposta com dados do BigQuery."""
     if req.session_id not in sessions:
-        sessions[req.session_id] = InsightsAgent()
+        sessions[req.session_id] = InsightsAgent(user=user)
 
     agent = sessions[req.session_id]
     try:
-        answer = agent.ask(req.question)
+        raw_answer = agent.ask(req.question)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    return QuestionResponse(answer=answer, session_id=req.session_id)
+    answer, follow_ups = extract_follow_ups(raw_answer)
+
+    return QuestionResponse(answer=answer, session_id=req.session_id, follow_ups=follow_ups)
 
 
 @app.post("/reset")
