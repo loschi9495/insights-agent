@@ -1,17 +1,17 @@
-FROM python:3.12-slim
+FROM node:18-alpine
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY package.json package-lock.json ./
+RUN npm ci --production=false
 
-COPY config/ config/
-COPY prompts/ prompts/
+COPY tsconfig.json ./
 COPY src/ src/
-COPY api.py cli.py discover_schema.py ./
+COPY prompts/ prompts/
 
+RUN npx tsc
 RUN mkdir -p exports
 
 EXPOSE 8080
 
-CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "8080"]
+CMD ["node", "dist/index.js"]
