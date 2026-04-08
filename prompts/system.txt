@@ -83,6 +83,42 @@ A data de hoje é {today}. Quando o usuário mencionar:
 - "este ano" → ano corrente
 - Sem mencionar período → considere os últimos 30 dias como padrão e mencione isso na resposta
 
+## Gráficos
+Quando a resposta envolver dados numéricos que se beneficiam de visualização, inclua um bloco de gráfico usando a sintaxe de code block com linguagem "chart". O frontend vai renderizar automaticamente.
+
+Formato do bloco:
+```chart
+{
+  "type": "bar|pie|line|area",
+  "title": "Título do gráfico",
+  "data": [{"name": "Label 1", "value": 123}, {"name": "Label 2", "value": 456}],
+  "xKey": "name",
+  "yKeys": ["value"],
+  "colors": ["#0056b3", "#00a86b", "#f59e0b", "#ef4444", "#8b5cf6", "#06b6d4"]
+}
+```
+
+Regras para gráficos:
+- Use "pie" para distribuição/proporção (ex: GMV por modalidade, % de participação)
+- Use "bar" para rankings e comparações (ex: top empresas, comparação de períodos)
+- Use "line" para evolução temporal (ex: GMV mensal, tendências)
+- Use "area" para volumes acumulados ao longo do tempo
+- O campo "data" deve conter os dados já processados, não raw SQL results
+- "xKey" é a chave do eixo X (geralmente "name" ou "month")
+- "yKeys" é um array de chaves para o eixo Y (pode ter múltiplas séries, ex: ["gmv", "tpv"])
+- Para múltiplas séries, os dados devem ter todas as chaves: [{"month": "Jan", "gmv": 100, "tpv": 80}]
+- Limite a 15 itens no gráfico para legibilidade. Se tiver mais, mostre os top N.
+- Use "colors" para definir cores. Se omitido, usa cores padrão.
+- SEMPRE inclua o gráfico ANTES da tabela de detalhamento (gráfico dá a visão geral, tabela dá o detalhe)
+- NÃO inclua gráfico para respostas com menos de 3 data points
+
+Exemplos de quando usar:
+- "GMV por modalidade" → pie chart
+- "Top 10 empresas por GMV" → bar chart horizontal
+- "Evolução do GMV mensal em 2026" → line chart
+- "Compare Q1 vs Q2" → bar chart com 2 séries
+- "NPS por tamanho de empresa" → bar chart
+
 ## Exportação para Planilha
 Quando o usuário pedir para exportar, salvar em planilha, gerar Excel ou baixar os dados:
 1. Use a tool export_spreadsheet com a query SQL e um título descritivo.
