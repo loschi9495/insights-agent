@@ -8,7 +8,7 @@ Agente de relatórios em linguagem natural que consulta o BigQuery da Onfly e re
 Pergunta em português → Claude (NLU + SQL) → BigQuery → Resposta formatada
 ```
 
-O agente recebe uma pergunta, usa o Claude para interpretar a intenção e gerar queries SQL, executa no BigQuery (dataset `cockpit`, projeto `dw-onfly-prd`) e formata a resposta com tabelas, insights e comparativos.
+O agente recebe uma pergunta, usa o Claude para interpretar a intenção e gerar queries SQL, executa no BigQuery e formata a resposta com tabelas, insights e comparativos.
 
 Todas as queries são **read-only** — comandos de escrita (INSERT, UPDATE, DELETE, DROP) são bloqueados automaticamente.
 
@@ -64,32 +64,6 @@ gcloud auth application-default login
 # Mapear schema do BigQuery (rodar uma vez)
 python discover_schema.py
 ```
-
-## Uso
-
-### CLI interativo
-
-```bash
-source .venv/bin/activate
-python cli.py
-```
-
-```
-📊 Pergunta: Qual o GMV por modalidade no Q1 2026?
-
-⏳ Consultando dados...
-
-# GMV Total por Modalidade - Q1 2026
-Total Geral: R$ 771.893.710,04
-
-| Modalidade | GMV             | % do Total |
-|-----------|-----------------|------------|
-| Voo       | R$ 435.520.330  | 56,4%      |
-| Hotel     | R$ 289.348.166  | 37,5%      |
-| Carro     | R$ 27.849.239   | 3,6%       |
-| Onibus    | R$ 19.175.973   | 2,5%       |
-```
-
 ### Pergunta direta (sem modo interativo)
 
 ```bash
@@ -160,27 +134,6 @@ Resposta:
 - "Empresas com mais de 100 funcionarios que nao usaram a plataforma nos ultimos 2 meses"
 - "Taxa de conversao voo vs hotel por empresa"
 
-## Tabelas disponiveis no BigQuery
-
-Dataset `cockpit` com 42 tabelas. Principais:
-
-| Tabela | Rows | Dominio |
-|--------|------|---------|
-| `gold_booking_purchase_item_details` | 4.7M | Reservas e compras (protocolo, viajante, valores, lucro) |
-| `gold_travel_accounting_items` | 4.0M | Contabilidade de viagens (status, consolidador, reembolso) |
-| `gold_travelers_date_trip` | 4.7M | Viajantes por viagem (datas, centro de custo) |
-| `gold_companies` | 10.7K | Empresas clientes (setor, plano, markup, status) |
-| `gold_customer_gmv_tpv_profit_monthly` | 589K | GMV/TPV/lucro mensal por cliente |
-| `gold_customer_product_activity` | 708K | Atividade por produto e empresa |
-| `gold_companies_scale_up` | 10.7K | Metricas de engajamento por empresa |
-| `gold_flight_pvc` | 181K | PVC de voos (rota, antecedencia, ticket medio) |
-| `gold_hotel_pvc` | 145K | PVC de hoteis (cidade, diaria, antecedencia) |
-| `gold_onfly_product_nps` | 36K | NPS do produto por empresa |
-| `gold_hubspot_history_tickets_suporte_interno` | 17.8M | Historico de tickets de suporte |
-| `gold_service_movidesk_tickets_all` | 497K | Tickets Movidesk |
-| `gold_emission_type_summary_monthly` | 509 | Emissoes automaticas vs manuais |
-| `gold_kpi_monthly_usage_summary` | 94 | KPIs mensais (viajantes, pedidos, TPV) |
-
 Para ver o schema completo: `config/schema.txt`
 
 ## Configuracao
@@ -190,8 +143,8 @@ Variaveis de ambiente (`.env`):
 | Variavel | Descricao | Default |
 |----------|-----------|---------|
 | `ANTHROPIC_API_KEY` | Chave da API Anthropic | (obrigatorio) |
-| `GCP_PROJECT_ID` | Projeto GCP | `dw-onfly-prd` |
-| `BIGQUERY_LOCATION` | Regiao do BigQuery | `us-central1` |
+| `GCP_PROJECT_ID` | Projeto GCP |
+| `BIGQUERY_LOCATION` | Regiao do BigQuery |
 | `BIGQUERY_MAX_BYTES_BILLED` | Limite de bytes por query | 10GB |
 | `CLAUDE_MODEL` | Modelo do Claude | `claude-sonnet-4-20250514` |
 | `CLAUDE_MAX_TOKENS` | Max tokens na resposta | 4096 |
