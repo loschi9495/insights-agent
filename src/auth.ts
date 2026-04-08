@@ -1,62 +1,28 @@
-import { Request, Response, NextFunction } from "express";
 import { OAuth2Client } from "google-auth-library";
 import { config } from "./config.js";
+import { generateAccessToken, generateRefreshToken, verifyToken } from "./middleware/jwt.js";
 import type { UserInfo } from "./prompt-enricher.js";
 
 const DEV_USER: UserInfo = { email: "dev@localhost", name: "Dev Local", picture: "" };
 
 const oauthClient = config.googleClientId ? new OAuth2Client(config.googleClientId) : null;
 
-export async function authMiddleware(req: Request, res: Response, next: NextFunction): Promise<void> {
-  if (config.authBypass) {
-    (req as any).user = DEV_USER;
-    next();
-    return;
-  }
-
-  const auth = req.headers.authorization || "";
-  if (!auth.startsWith("Bearer ")) {
-    res.status(401).json({ detail: "Token não fornecido" });
-    return;
-  }
-
-  const token = auth.slice(7);
-
-  try {
-    if (!oauthClient) {
-      res.status(500).json({ detail: "GOOGLE_CLIENT_ID não configurado" });
-      return;
-    }
-
-    const ticket = await oauthClient.verifyIdToken({
-      idToken: token,
-      audience: config.googleClientId,
-    });
-    const payload = ticket.getPayload();
-    if (!payload?.email_verified) {
-      res.status(401).json({ detail: "Email não verificado" });
-      return;
-    }
-
-    const email = payload.email || "";
-    if (config.allowedEmailDomain && !email.endsWith(`@${config.allowedEmailDomain}`)) {
-      res.status(403).json({ detail: `Acesso restrito a emails @${config.allowedEmailDomain}` });
-      return;
-    }
-
-    (req as any).user = {
-      email,
-      name: payload.name || "",
-      picture: payload.picture || "",
-    };
-    next();
-  } catch {
-    res.status(401).json({ detail: "Token inválido ou expirado" });
-  }
+export interface AuthTokens {
+  access_token: string;
+  refresh_token: string;
+  expires_in: string;
+  user: UserInfo;
 }
 
-export async function verifyGoogleToken(credential: string): Promise<UserInfo> {
-  if (config.authBypass) return DEV_USER;
+export async function loginWithGoogle(credential: string): Promise<AuthTokens> {
+  if (config.authBypass) {
+    return {
+      access_token: generateAccessToken(DEV_USER),
+      refresh_token: generateRefreshToken(DEV_USER),
+      expires_in: config.jwtExpiresIn,
+      user: DEV_USER,
+    };
+  }
 
   if (!oauthClient) throw new Error("GOOGLE_CLIENT_ID não configurado");
 
@@ -72,5 +38,25 @@ export async function verifyGoogleToken(credential: string): Promise<UserInfo> {
     throw new Error(`Acesso restrito a emails @${config.allowedEmailDomain}`);
   }
 
-  return { email, name: payload.name || "", picture: payload.picture || "" };
+  const user: UserInfo = {
+    email,
+    name: payload.name || "",
+    picture: payload.picture || "",
+  };
+
+  return {
+    access_token: generateAccessToken(user),
+    refresh_token: generateRefreshToken(user),
+    expires_in: config.jwtExpiresIn,
+    user,
+  };
+}
+
+export function refreshAccessToken(refreshToken: string): { access_token: string; expires_in: string } {
+  const payload = verifyToken(refreshToken, "refresh");
+  const user: UserInfo = { email: payload.email, name: payload.name, picture: payload.picture };
+  return {
+    access_token: generateAccessToken(user),
+    expires_in: config.jwtExpiresIn,
+  };
 }

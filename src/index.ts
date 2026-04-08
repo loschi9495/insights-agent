@@ -1,23 +1,28 @@
 import express from "express";
 import cors from "cors";
+import helmet from "helmet";
 import { config } from "./config.js";
-import { authMiddleware, verifyGoogleToken } from "./auth.js";
+import { loginWithGoogle, refreshAccessToken } from "./auth.js";
+import { authenticate } from "./middleware/authenticate.js";
+import { apiLimiter, authLimiter, streamLimiter } from "./middleware/rate-limit.js";
+import { requestLogger } from "./middleware/request-logger.js";
+import { errorHandler } from "./middleware/error-handler.js";
 import { InsightsAgent } from "./agent.js";
 import { StreamingInsightsAgent } from "./agent-stream.js";
 import { getExportPath, cleanupOldExports } from "./exporter.js";
 import { getTemplates, renderTemplate } from "./templates.js";
-import type { UserInfo } from "./prompt-enricher.js";
 
 const app = express();
+
+// --- Global middleware ---
+app.use(helmet({ contentSecurityPolicy: false }));
 app.use(cors());
 app.use(express.json());
+app.use(requestLogger);
 
+// --- Session stores ---
 const sessions = new Map<string, InsightsAgent>();
 const streamSessions = new Map<string, StreamingInsightsAgent>();
-
-function getUser(req: express.Request): UserInfo {
-  return (req as any).user;
-}
 
 function extractFollowUps(answer: string): { answer: string; followUps: string[] } {
   const markers = ["**Próximas perguntas:**", "**Próximas perguntas**:", "**Perguntas sugeridas:**"];
@@ -36,29 +41,55 @@ function extractFollowUps(answer: string): { answer: string; followUps: string[]
   return { answer, followUps: [] };
 }
 
-// --- Auth ---
+// ==========================================
+//  AUTH ROUTES (public)
+// ==========================================
 
 app.get("/auth/bypass-status", (_req, res) => {
   res.json({ bypass: config.authBypass });
 });
 
-app.post("/auth/google", async (req, res) => {
+app.post("/auth/google", authLimiter, async (req, res) => {
   try {
-    const user = await verifyGoogleToken(req.body.credential);
-    res.json(user);
+    const tokens = await loginWithGoogle(req.body.credential);
+    res.json(tokens);
   } catch (e) {
-    res.status(401).json({ detail: (e as Error).message });
+    res.status(401).json({ error: (e as Error).message, code: "AUTH_FAILED" });
   }
 });
 
-// --- Protected routes ---
+app.post("/auth/refresh", authLimiter, (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+    if (!refresh_token) {
+      res.status(400).json({ error: "refresh_token obrigatório", code: "MISSING_REFRESH_TOKEN" });
+      return;
+    }
+    const tokens = refreshAccessToken(refresh_token);
+    res.json(tokens);
+  } catch (e) {
+    const message = (e as Error).message;
+    if (message.includes("expired")) {
+      res.status(401).json({ error: "Refresh token expirado. Faça login novamente.", code: "REFRESH_EXPIRED" });
+    } else {
+      res.status(401).json({ error: "Refresh token inválido", code: "INVALID_REFRESH" });
+    }
+  }
+});
 
-app.post("/ask", authMiddleware, async (req, res) => {
+app.get("/auth/me", authenticate, (req, res) => {
+  res.json(req.user);
+});
+
+// ==========================================
+//  PROTECTED ROUTES
+// ==========================================
+
+app.post("/ask", authenticate, apiLimiter, async (req, res) => {
   const { question, session_id = "default" } = req.body;
-  const user = getUser(req);
 
   if (!sessions.has(session_id)) {
-    const agent = new InsightsAgent(user);
+    const agent = new InsightsAgent(req.user!);
     await agent.init();
     sessions.set(session_id, agent);
   }
@@ -68,16 +99,15 @@ app.post("/ask", authMiddleware, async (req, res) => {
     const { answer, followUps } = extractFollowUps(rawAnswer);
     res.json({ answer, session_id, follow_ups: followUps });
   } catch (e) {
-    res.status(500).json({ detail: (e as Error).message });
+    res.status(500).json({ error: (e as Error).message, code: "AGENT_ERROR" });
   }
 });
 
-app.post("/ask/stream", authMiddleware, async (req, res) => {
+app.post("/ask/stream", authenticate, streamLimiter, async (req, res) => {
   const { question, session_id = "default" } = req.body;
-  const user = getUser(req);
 
   if (!streamSessions.has(session_id)) {
-    streamSessions.set(session_id, new StreamingInsightsAgent(user));
+    streamSessions.set(session_id, new StreamingInsightsAgent(req.user!));
   }
 
   res.setHeader("Content-Type", "text/event-stream");
@@ -95,14 +125,14 @@ app.post("/ask/stream", authMiddleware, async (req, res) => {
   res.end();
 });
 
-app.post("/reset", authMiddleware, (req, res) => {
-  const sessionId = req.query.session_id as string || "default";
+app.post("/reset", authenticate, (req, res) => {
+  const sessionId = (req.query.session_id as string) || "default";
   sessions.get(sessionId)?.reset();
   streamSessions.get(sessionId)?.reset();
   res.json({ status: "ok" });
 });
 
-app.get("/suggestions", authMiddleware, (_req, res) => {
+app.get("/suggestions", authenticate, (_req, res) => {
   res.json({
     suggestions: [
       "Qual o GMV total por modalidade no Q1 2026?",
@@ -119,33 +149,40 @@ app.get("/suggestions", authMiddleware, (_req, res) => {
   });
 });
 
-app.get("/templates", authMiddleware, (_req, res) => {
+app.get("/templates", authenticate, (_req, res) => {
   res.json({ templates: getTemplates() });
 });
 
-app.post("/templates/render", authMiddleware, (req, res) => {
+app.post("/templates/render", authenticate, (req, res) => {
   const { template_id, variables } = req.body;
   const prompt = renderTemplate(template_id, variables);
   if (!prompt) {
-    res.status(404).json({ detail: "Template não encontrado" });
+    res.status(404).json({ error: "Template não encontrado", code: "NOT_FOUND" });
     return;
   }
   res.json({ prompt });
 });
 
-app.get("/download/:fileId", authMiddleware, (req, res) => {
+app.get("/download/:fileId", authenticate, (req, res) => {
   const filepath = getExportPath(req.params.fileId as string);
   if (!filepath) {
-    res.status(404).json({ detail: "Arquivo não encontrado ou expirado." });
+    res.status(404).json({ error: "Arquivo não encontrado ou expirado.", code: "NOT_FOUND" });
     return;
   }
   res.download(filepath);
 });
 
+// ==========================================
+//  PUBLIC ROUTES
+// ==========================================
+
 app.get("/health", (_req, res) => {
   cleanupOldExports();
   res.json({ status: "ok" });
 });
+
+// --- Error handler (must be last) ---
+app.use(errorHandler);
 
 app.listen(config.port, () => {
   console.log(`Insights Agent running on http://localhost:${config.port}`);

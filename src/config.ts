@@ -16,5 +16,12 @@ export const config = {
   allowedEmailDomain: process.env.ALLOWED_EMAIL_DOMAIN || "",
   authBypass: process.env.AUTH_BYPASS?.toLowerCase() === "true",
 
+  jwtSecret: process.env.JWT_SECRET || "onfly-insights-dev-secret-change-in-prod",
+  jwtExpiresIn: process.env.JWT_EXPIRES_IN || "8h",
+  refreshTokenExpiresIn: process.env.REFRESH_TOKEN_EXPIRES_IN || "7d",
+
+  rateLimitWindowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS || "60000"),
+  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || "30"),
+
   port: parseInt(process.env.PORT || "8080"),
 };
