@@ -63,12 +63,23 @@ class TemplateRenderRequest(BaseModel):
     variables: dict | None = None
 
 
+@app.get("/auth/bypass-status")
+def auth_bypass_status():
+    """Retorna se o bypass de auth está ativo (para o frontend saber)."""
+    from config.settings import AUTH_BYPASS
+    return {"bypass": AUTH_BYPASS}
+
+
 @app.post("/auth/google", response_model=UserResponse)
 def google_login(req: GoogleLoginRequest):
     """Valida o token do Google Sign-In e retorna dados do usuário."""
+    from config.settings import GOOGLE_CLIENT_ID, ALLOWED_EMAIL_DOMAIN, AUTH_BYPASS
+
+    if AUTH_BYPASS:
+        return UserResponse(email="dev@localhost", name="Dev Local", picture="")
+
     from google.oauth2 import id_token
     from google.auth.transport import requests as google_requests
-    from config.settings import GOOGLE_CLIENT_ID, ALLOWED_EMAIL_DOMAIN
 
     try:
         idinfo = id_token.verify_oauth2_token(

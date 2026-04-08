@@ -16,3 +16,4 @@ BLOCKED_SQL_KEYWORDS = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE",
 
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
 ALLOWED_EMAIL_DOMAIN = os.getenv("ALLOWED_EMAIL_DOMAIN", "")  # ex: "onfly.com.br" para restringir
+AUTH_BYPASS = os.getenv("AUTH_BYPASS", "false").lower() == "true"
