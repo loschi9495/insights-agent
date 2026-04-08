@@ -1,0 +1,7 @@
+.venv/
+.env
+config/schema.txt
+__pycache__/
+*.pyc
+.idea/
+.vscode/
