@@ -1,0 +1,32 @@
+services:
+  backend:
+    build: .
+    container_name: insights-backend
+    ports:
+      - "8080:8080"
+    env_file:
+      - .env
+    volumes:
+      - ./config/schema.txt:/app/config/schema.txt:ro
+      - gcloud-config:/root/.config/gcloud:ro
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ../Onfly Insight Chat
+      args:
+        VITE_GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+    container_name: insights-frontend
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+
+volumes:
+  gcloud-config:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ${HOME}/.config/gcloud
