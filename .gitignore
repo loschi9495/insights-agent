@@ -1,7 +1,39 @@
-.venv/
-.env
+# Onfly Insights Agent
 config/schema.txt
+
+# Byte-compiled / optimized / DLL files
 __pycache__/
-*.pyc
+*.py[codz]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+
+# IDE
 .idea/
 .vscode/
+.cursor*
+
+# Testing
+htmlcov/
+.tox/
+.nox/
+.coverage
+.pytest_cache/
+
+# Misc
+*.log
+.mypy_cache/
+.ruff_cache/
